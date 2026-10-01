@@ -92,7 +92,11 @@ if user_id:
     if known_user:
         profile = bundle["cluster_profiles"][cluster_id]
         cluster_value = f"Cluster {cluster_id}"
-        segment_value = profile["label"]
+        if "higher-activity" in profile["label"]:
+            segment_value = "Higher Activity"
+        else:
+            segment_value = profile["label"].split(" / ")[-1].title()
+        full_profile = profile["label"].replace("-", " ").capitalize()
         source = cluster_value
         stats_by_product = product_metadata["cluster_product_stats"][cluster_id]
         st.caption("Products already rated in the training data are excluded.")
@@ -113,13 +117,16 @@ if user_id:
     metric_columns[1].metric("User Segment", segment_value)
     metric_columns[2].metric("Number of Recommendations", len(recommendations))
 
+    if known_user:
+        st.caption(f"Cluster profile: {full_profile}")
+
     if recommendations:
         table_rows = []
         for rank, product_id in enumerate(recommendations, start=1):
             product_stats = stats_by_product[product_id]
             table_rows.append({
                 "Rank": rank,
-                "productId": product_id,
+                "Product ID": product_id,
                 "Avg Rating": product_stats["avg_rating"],
                 "Rating Count": product_stats["rating_count"],
                 "Positive %": product_stats["positive_percent"],
