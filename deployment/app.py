@@ -1,5 +1,4 @@
 from pathlib import Path
-from time import perf_counter
 
 import numpy as np
 import streamlit as st
@@ -13,10 +12,10 @@ ARTIFACT_DIR = APP_DIR / "artifacts"
 
 @st.cache_resource
 def load_artifacts():
-    started = perf_counter()
     bundle = load(ARTIFACT_DIR / "approach_a_recommendations.joblib")
     seen_items = load_npz(ARTIFACT_DIR / "seen_items.npz").tocsr()
-    return bundle, seen_items, perf_counter() - started
+    product_metadata = load(ARTIFACT_DIR / "product_metadata.joblib")
+    return bundle, seen_items, product_metadata
 
 
 def get_recommendations(user_id, number, bundle, seen_items, extra_seen_ids):
@@ -61,7 +60,7 @@ st.title("P704 Product Recommendations")
 st.caption("Approach A · Behavioural User Clustering using KMeans (k=4)")
 
 try:
-    bundle, seen_items, artifact_load_seconds = load_artifacts()
+    bundle, seen_items, product_metadata = load_artifacts()
 except Exception as error:
     st.error(f"Could not load deployment artifacts: {error}")
     st.stop()
@@ -70,6 +69,7 @@ demo_users = bundle["demo_users"]
 demo_options = ["Enter a userId"] + [row["user_id"] for row in demo_users]
 selected_demo = st.selectbox("Select a demonstration user", demo_options)
 typed_user_id = st.text_input("Or enter a userId")
+st.caption("Manual userId input overrides the demonstration-user dropdown.")
 user_id = typed_user_id.strip()
 if not user_id and selected_demo != "Enter a userId":
     user_id = selected_demo
@@ -81,8 +81,6 @@ extra_seen_text = st.text_input(
 )
 extra_seen_ids = [value.strip() for value in extra_seen_text.split(",") if value.strip()]
 
-st.caption(f"Recommendation artifacts loaded in {artifact_load_seconds:.2f} seconds.")
-
 if user_id:
     known_user, cluster_id, recommendations = get_recommendations(
         user_id, number, bundle, seen_items, extra_seen_ids
@@ -93,23 +91,55 @@ if user_id:
 
     if known_user:
         profile = bundle["cluster_profiles"][cluster_id]
-        st.write(f"**Assigned cluster:** {cluster_id}")
-        st.write(f"**Cluster profile:** {profile['label']}")
+        cluster_value = f"Cluster {cluster_id}"
+        segment_value = profile["label"]
+        source = cluster_value
+        stats_by_product = product_metadata["cluster_product_stats"][cluster_id]
         st.caption("Products already rated in the training data are excluded.")
     else:
+        cluster_value = "Global Popularity Fallback"
+        segment_value = "Not modelled"
+        source = "Global Popularity"
+        stats_by_product = product_metadata["global_product_stats"]
         st.info(
             "This user is not represented in the clustered modeling population. "
-            "Showing the Global Popularity benchmark as a fallback. "
+            "Showing the Global Popularity fallback. "
             "The app has no saved rating history for this user, so enter any known "
             "already-rated productIds above to exclude them."
         )
 
+    metric_columns = st.columns(3)
+    metric_columns[0].metric("Assigned Cluster", cluster_value)
+    metric_columns[1].metric("User Segment", segment_value)
+    metric_columns[2].metric("Number of Recommendations", len(recommendations))
+
     if recommendations:
-        st.write("**Recommended productIds**")
+        table_rows = []
+        for rank, product_id in enumerate(recommendations, start=1):
+            product_stats = stats_by_product[product_id]
+            table_rows.append({
+                "Rank": rank,
+                "productId": product_id,
+                "Avg Rating": product_stats["avg_rating"],
+                "Rating Count": product_stats["rating_count"],
+                "Positive %": product_stats["positive_percent"],
+                "Source": source,
+            })
+
+        st.write("**Recommended products**")
         st.dataframe(
-            {"Rank": range(1, len(recommendations) + 1), "productId": recommendations},
+            table_rows,
+            column_config={
+                "Avg Rating": st.column_config.NumberColumn(format="%.2f"),
+                "Rating Count": st.column_config.NumberColumn(format="%d"),
+                "Positive %": st.column_config.NumberColumn(format="%.1f%%"),
+            },
             hide_index=True,
             width="stretch",
+        )
+        st.caption(
+            "Average rating, rating count and positive percentage are historical "
+            "training statistics for the displayed source, not predicted ratings."
         )
     else:
         st.warning("No unseen products were available in the saved recommendation list.")
