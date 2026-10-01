@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# P704 project data / local backup
+ratings.csv
+**/ratings.csv
+P704_Master_before_final_model_selection.ipynb
+*.sqlite
+*.sqlite3
