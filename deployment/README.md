@@ -20,10 +20,14 @@ does not load `ratings.csv`. Product names are unavailable because the source
 contains Product IDs only. Displayed rating statistics are historical and
 training-only, not predicted ratings.
 
-Use the sidebar to select a demonstration user or enter a userId manually
-(manual input takes precedence), choose Top-N from 1 to 20, and optionally enter
-comma-separated product IDs to exclude. Submit with **Get Recommendations**.
-The **Recommendations** tab shows saved-user results and **New User** provides
-the five-rating onboarding demonstration with suggested Product IDs. Results
-include historical training-only statistics; **Model Insights** displays saved
-cluster profiles, and **About** summarizes the serving paths.
+The **Recommendations** tab contains the existing-user controls: select a
+demonstration user or enter a User ID (manual input takes precedence), choose
+Top-N from 1 to 20, and optionally exclude comma-separated Product IDs. Submit
+with **Get Recommendations**.
+
+The **New User** tab starts with five editable sample Product IDs from the
+saved Global Popularity ranking; enter ratings and select **Build My
+Recommendations**. Additional examples are available in a collapsed browser.
+Results show historical training-only statistics. **Model Insights** displays
+the saved cluster profiles and population, while **About** summarizes the
+serving paths.

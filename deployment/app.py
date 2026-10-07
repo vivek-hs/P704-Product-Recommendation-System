@@ -273,11 +273,11 @@ def display_profile_label(profile):
 
 st.set_page_config(page_title="Product Recommendation System", layout="wide")
 st.title("Product Recommendation System")
-st.caption("Behavioural User Clustering with KMeans (k=4)")
 st.write(
-    "The system recommends unseen products from a user's behavioural cluster, "
-    "using Global Popularity as a fallback for unsupported users."
+    "Personalized recommendations from behavioural user clusters, with onboarding for new users "
+    "and Global Popularity as a fallback when no usable profile is available."
 )
+st.caption("Behavioural KMeans · k=4 · Streamlit")
 
 try:
     bundle, seen_items, product_metadata, behavioural_pipeline = load_artifacts()
@@ -299,40 +299,39 @@ for demo_user in demo_users:
         demo_user_ids.append(demo_user_id)
 
 placeholder = "Select a demonstration user"
-with st.sidebar:
-    st.header("Recommendation inputs")
-    with st.form("recommendation_inputs"):
-        selected_demo = st.selectbox(
-            "Demonstration user",
-            [placeholder] + demo_user_ids,
-            help="Choose one of the saved example users.",
-        )
-        typed_user_id = st.text_input(
-            "Manual userId (optional)",
-            help="Enter an ID exactly as stored. Manual input overrides the demonstration-user selection.",
-        )
-        number = st.slider(
-            "Number of recommendations",
-            min_value=1,
-            max_value=20,
-            value=10,
-        )
-        extra_seen_text = st.text_input(
-            "Already-rated product IDs (optional)",
-            help="Enter comma-separated product IDs to exclude. Spaces are trimmed, duplicates are ignored, and IDs remain text.",
-        )
-        submitted = st.form_submit_button("Get Recommendations", type="primary")
-
-    st.caption("A manually entered userId takes precedence over the demonstration-user selection.")
-
 recommendations_tab, new_user_tab, insights_tab, about_tab = st.tabs(
     ["Recommendations", "New User", "Model Insights", "About"]
 )
 
 with recommendations_tab:
-    if not submitted:
-        st.info("Choose a demonstration user or enter a userId in the sidebar, then select Get Recommendations.")
-    else:
+    st.subheader("Recommend for an existing user")
+    with st.form("recommendation_inputs"):
+        user_inputs, ranking_inputs = st.columns(2)
+        with user_inputs:
+            selected_demo = st.selectbox(
+                "Demonstration user",
+                [placeholder] + demo_user_ids,
+                help="Choose one of the saved example users.",
+            )
+            typed_user_id = st.text_input(
+                "Manual User ID (optional)",
+                help="Enter an ID exactly as stored. Manual input overrides the demonstration-user selection.",
+            )
+        with ranking_inputs:
+            number = st.slider(
+                "Number of recommendations",
+                min_value=1,
+                max_value=20,
+                value=10,
+            )
+            with st.expander("Optional exclusions"):
+                extra_seen_text = st.text_input(
+                    "Already-rated Product IDs",
+                    help="Enter comma-separated Product IDs to exclude. Spaces are trimmed, duplicates are ignored, and IDs remain text.",
+                )
+        submitted = st.form_submit_button("Get Recommendations", type="primary")
+
+    if submitted:
         manual_user_id = typed_user_id.strip()
 
         if manual_user_id:
@@ -347,7 +346,7 @@ with recommendations_tab:
 
         if not user_id:
             if selected_demo == placeholder and not manual_user_id:
-                st.warning("Enter a userId or select a demonstration user.")
+                st.warning("Enter a User ID or select a demonstration user.")
         else:
             extra_seen_ids = parse_manual_seen_ids(extra_seen_text)
             known_user, cluster_id, recommendations = get_recommendations(
@@ -366,39 +365,45 @@ with recommendations_tab:
                 training_excluded_count = count_training_candidates_excluded(
                     user_id, cluster_id, bundle, seen_items
                 )
-                summary = st.columns(4)
-                summary[0].metric("User status", "Known modelled user")
-                summary[1].metric("Assigned cluster", f"Cluster {cluster_id}")
-                summary[2].metric("Requested Top-N", number)
-                summary[3].metric("Training-history candidates excluded", training_excluded_count)
-                st.caption(f"User segment: {display_profile_label(profile)}")
+                summary = st.columns([1, 1, 2])
+                summary[0].metric("User type", "Known user")
+                summary[1].metric("Cluster", f"Cluster {cluster_id}")
+                summary[2].metric("Segment", display_profile_label(profile))
+                if training_excluded_count == 1:
+                    exclusion_message = (
+                        "1 ranked candidate product was excluded because it was already present "
+                        "in this user's training history."
+                    )
+                else:
+                    exclusion_message = (
+                        f"{training_excluded_count} ranked candidate products were excluded because "
+                        "they were already present in this user's training history."
+                    )
+                st.caption(exclusion_message)
                 stats_by_product = product_metadata["cluster_product_stats"][cluster_id]
                 source = f"Cluster {cluster_id}"
             else:
-                summary = st.columns(3)
-                summary[0].metric("User status", "Outside modelled population")
+                summary = st.columns(2)
+                summary[0].metric("User type", "Unsupported user")
                 summary[1].metric("Recommendation source", "Global Popularity")
-                summary[2].metric("Requested Top-N", number)
                 st.info(
                     "No saved behavioural cluster or training history is available for this user. "
-                    "Global Popularity is used as the fallback; manually supplied known product IDs are still excluded."
+                    "Global Popularity is used as the fallback; manually supplied Product IDs are still excluded."
                 )
                 stats_by_product = product_metadata["global_product_stats"]
                 source = "Global Popularity"
 
             with st.expander("Why these recommendations?"):
                 if known_user:
-                    st.write(
-                        "This user has a saved behavioural KMeans cluster. Candidate products come from "
-                        "that cluster's training-only ranking; products already rated in training and "
-                        "any manually supplied exclusions are skipped. The remaining highest-ranked "
-                        "unseen products are returned."
+                    st.markdown(
+                        "- Products are ranked using this user's saved behavioural cluster and its training-only ranking.\n"
+                        "- Training-history products and optional exclusions are skipped.\n"
+                        "- The highest-ranked unseen products are returned."
                     )
                 else:
-                    st.write(
-                        "No saved behavioural cluster or history is available for this user, so the "
-                        "saved Global Popularity ranking is used. Manually supplied known product IDs "
-                        "can still be excluded."
+                    st.markdown(
+                        "- No saved behavioural cluster is available, so the Global Popularity ranking is used.\n"
+                        "- Optional manually supplied Product IDs are excluded."
                     )
 
             st.subheader("Recommended products")
@@ -427,7 +432,7 @@ with recommendations_tab:
                 )
                 st.caption(
                     f"Returned {len(recommendations)} of {number} requested. "
-                    "Historical statistics use training data; they are not predicted ratings."
+                    "Historical statistics are training-only and are not predicted ratings."
                 )
                 st.download_button(
                     "Download recommendations as CSV",
@@ -439,21 +444,28 @@ with recommendations_tab:
                 st.warning("No unseen products remain in the saved ranking after the selected exclusions.")
 
 with new_user_tab:
-    st.subheader("New-user onboarding demonstration")
+    st.subheader("Build an initial behavioural profile")
     st.write(
-        "Enter ratings for at least five unique products. Product names are not available in the source, "
-        "so use the Product IDs in the suggested list below. Ratings become a behavioural profile; "
-        "the saved scaler and KMeans model assign an initial behavioural cluster without retraining."
+        "Rate the five sample Product IDs below from 1 to 5. Because the source dataset contains only Product IDs, "
+        "this is a behavioural onboarding demonstration rather than a semantic product-preference survey."
+    )
+    st.write(
+        "Your ratings are converted into five behavioural features and passed through the saved scaler and "
+        "KMeans model. The model is not retrained."
     )
 
     global_stats = product_metadata["global_product_stats"]
     suggested_rows = []
+    starter_product_ids = []
     for product_id in bundle["global_ranked_products"]:
         product_stats = global_stats.get(product_id)
         if product_stats is None:
             continue
+        product_id_text = str(product_id)
+        if len(starter_product_ids) < 5:
+            starter_product_ids.append(product_id_text)
         suggested_rows.append({
-            "Product ID": str(product_id),
+            "Product ID": product_id_text,
             "Avg Rating": product_stats["avg_rating"],
             "Rating Count": product_stats["rating_count"],
             "Positive %": product_stats["positive_percent"],
@@ -461,39 +473,20 @@ with new_user_tab:
         if len(suggested_rows) == 25:
             break
 
-    st.markdown("**Suggested products to rate**")
-    st.dataframe(
-        suggested_rows,
-        column_config={
-            "Avg Rating": st.column_config.NumberColumn(format="%.2f"),
-            "Rating Count": st.column_config.NumberColumn(format="%d"),
-            "Positive %": st.column_config.NumberColumn(format="%.1f%%"),
-        },
-        hide_index=True,
-        width="stretch",
-    )
-    st.caption("These are historical training statistics, not predicted ratings.")
-
-    starter_ratings = pd.DataFrame({
-        "Product ID": pd.Series([""] * 5, dtype="string"),
-        "Rating": pd.Series([pd.NA] * 5, dtype="Int64"),
-    })
+    starter_product_ids.extend([""] * (5 - len(starter_product_ids)))
+    entered_ratings = []
     with st.form("new_user_onboarding"):
-        edited_ratings = st.data_editor(
-            starter_ratings,
-            num_rows="dynamic",
-            column_config={
-                "Product ID": st.column_config.TextColumn(
-                    help="Enter a saved Product ID as text; leading zeroes are preserved."
-                ),
-                "Rating": st.column_config.NumberColumn(
-                    min_value=1, max_value=5, step=1, format="%d"
-                ),
-            },
-            hide_index=True,
-            width="stretch",
-            key="new_user_ratings_editor",
-        )
+        for row_number, product_id in enumerate(starter_product_ids):
+            product_column, rating_column = st.columns([3, 1])
+            product_column.markdown(f"**Product ID:** `{product_id}`")
+            selected_rating = rating_column.selectbox(
+                "Your Rating",
+                options=[None, 1, 2, 3, 4, 5],
+                format_func=lambda value: "Select rating" if value is None else str(value),
+                key=f"new_user_rating_{row_number}",
+            )
+            entered_ratings.append(selected_rating)
+
         new_user_number = st.slider(
             "Number of recommendations",
             min_value=1,
@@ -505,15 +498,33 @@ with new_user_tab:
             "Build My Recommendations", type="primary"
         )
 
+    with st.expander("Browse more sample Product IDs"):
+        st.dataframe(
+            suggested_rows,
+            column_config={
+                "Avg Rating": st.column_config.NumberColumn(format="%.2f"),
+                "Rating Count": st.column_config.NumberColumn(format="%d"),
+                "Positive %": st.column_config.NumberColumn(format="%.1f%%"),
+            },
+            hide_index=True,
+            width="stretch",
+        )
+        st.caption("These are historical training statistics, not predicted ratings.")
+
     if build_recommendations:
+        rating_values = [pd.NA if rating is None else rating for rating in entered_ratings]
+        onboarding_input = pd.DataFrame({
+            "Product ID": pd.Series(starter_product_ids, dtype="string"),
+            "Rating": pd.Series(rating_values, dtype="Int64"),
+        })
         onboarding_ratings, validation_errors = validate_onboarding_ratings(
-            edited_ratings,
+            onboarding_input,
             product_catalog,
             behavioural_pipeline["minimum_onboarding_ratings"],
         )
         if validation_errors:
-            for validation_error in validation_errors:
-                st.error(validation_error)
+            error_list = "\n".join(f"- {message}" for message in dict.fromkeys(validation_errors))
+            st.error(f"Please correct the following onboarding entries:\n\n{error_list}")
         else:
             feature_frame, onboarding_profile = make_onboarding_feature_frame(
                 onboarding_ratings, behavioural_pipeline
@@ -525,19 +536,21 @@ with new_user_tab:
             if cluster_profile is None:
                 st.error("The predicted cluster profile is not available in the saved recommendation bundle.")
             else:
-                summary = st.columns(5)
+                summary = st.columns([1, 1, 2])
                 summary[0].metric("Ratings provided", onboarding_profile["rating_count"])
-                summary[1].metric("Mean rating", f"{onboarding_profile['mean_rating']:.2f}")
-                summary[2].metric("Positive %", f"{100 * onboarding_profile['positive_ratio']:.1f}%")
-                summary[3].metric("Negative %", f"{100 * onboarding_profile['negative_ratio']:.1f}%")
-                summary[4].metric("Initial behavioural cluster", f"Cluster {cluster_id}")
-                st.caption(f"User segment: {display_profile_label(cluster_profile)}")
+                summary[1].metric("Initial cluster", f"Cluster {cluster_id}")
+                summary[2].metric("User segment", display_profile_label(cluster_profile))
+                st.caption(
+                    f"Mean rating: {onboarding_profile['mean_rating']:.2f}  ·  "
+                    f"Positive ratings: {100 * onboarding_profile['positive_ratio']:.1f}%  ·  "
+                    f"Negative ratings: {100 * onboarding_profile['negative_ratio']:.1f}%"
+                )
 
                 with st.expander("Why this cluster?"):
                     st.write(
-                        "The initial assignment uses aggregate rating behaviour: activity, average rating, "
-                        "rating spread, positive share, and negative share. It does not infer demographics "
-                        "or product meaning. The cluster may change as more ratings become available."
+                        "The initial assignment uses activity, average rating, rating spread, positive share, "
+                        "and negative share. It does not infer product meaning or demographics, and may change "
+                        "as more ratings become available."
                     )
                 with st.expander("Rating spread"):
                     st.write(f"Sample rating standard deviation: {onboarding_profile['rating_std']:.3f}")
@@ -575,7 +588,10 @@ with new_user_tab:
                         hide_index=True,
                         width="stretch",
                     )
-                    st.caption("Statistics are historical training values, not predicted ratings.")
+                    st.caption(
+                        f"Returned {len(recommendations)} of {new_user_number} requested. "
+                        "Historical statistics are training-only and are not predicted ratings."
+                    )
 
                 if len(recommendations) < new_user_number:
                     st.warning(
@@ -583,14 +599,30 @@ with new_user_tab:
                         f"the saved cluster ranking had {candidate_count} products before exclusions. "
                         "This onboarding path does not switch to Global Popularity."
                     )
-                else:
-                    st.caption(f"Returned {len(recommendations)} of {new_user_number} requested.")
 
 with insights_tab:
     st.subheader("Behavioural user clusters")
     st.write(
         f"Approach A assigns modelled users to {bundle['n_clusters']} saved KMeans clusters. "
         "The profiles summarize training-user activity and rating preferences."
+    )
+
+    st.subheader("Cluster population")
+    cluster_share = pd.DataFrame(
+        {
+            "Cluster": [f"Cluster {cluster_id}" for cluster_id in sorted(bundle["cluster_profiles"])],
+            "User share (%)": [
+                bundle["cluster_profiles"][cluster_id]["share_percent"]
+                for cluster_id in sorted(bundle["cluster_profiles"])
+            ],
+        }
+    )
+    st.bar_chart(
+        cluster_share,
+        x="Cluster",
+        y="User share (%)",
+        horizontal=True,
+        height=280,
     )
 
     profile_rows = []
@@ -621,11 +653,17 @@ with insights_tab:
     st.caption("Cluster summaries are read from the saved training-only recommendation bundle.")
 
 with about_tab:
-    st.subheader("About this application")
+    st.subheader("How recommendations work")
     st.markdown(
-        "- **Existing modelled users:** use their saved cluster and precomputed cluster ranking; products already rated in training are excluded.\n"
-        "- **New users with at least five ratings:** behavioural features are passed through the saved scaler and KMeans model, then recommendations come from that cluster's saved ranking.\n"
-        "- **Users with no usable history:** use the Global Popularity fallback.\n"
-        "- No runtime retraining occurs, and the app does not load `ratings.csv`.\n"
-        "- Product names are unavailable because the source contains IDs only. Displayed statistics are historical and training-only."
+        "- **Existing modelled users:** use their saved cluster ranking, excluding products rated in training.\n"
+        "- **New users with at least five ratings:** receive an initial behavioural cluster and recommendations from its saved ranking.\n"
+        "- **Users without usable behavioural history:** receive the Global Popularity fallback."
+    )
+
+    st.subheader("Technical notes")
+    st.markdown(
+        "- There is no runtime retraining and the app does not load ratings.csv.\n"
+        "- The fitted scaler and KMeans model are loaded from saved artifacts.\n"
+        "- Displayed statistics are historical and training-only.\n"
+        "- Product names are unavailable because the source dataset contains Product IDs only."
     )
